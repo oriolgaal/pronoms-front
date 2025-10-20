@@ -1,52 +1,57 @@
 # Joc dels Pronoms Febles
 
-An educational web game to teach **Catalan weak pronouns (pronoms febles)** using interactive gameplay. Players see full sentences and must type the shortened version using correct weak pronouns.
+An educational web game to teach **Catalan weak pronouns (pronoms febles)** using interactive gameplay similar to Wordle. Players see full sentences and must type the shortened version using correct weak pronouns.
 
 ## Project Overview
 
-This is a **Phase 1 Proof of Concept (POC)** - a minimal but functional web application that runs locally without backend, user accounts, or complex features. The goal is to validate the concept before investing in more advanced functionality.
+This is a **Daily Challenge** version - a functional web application where users receive 5 sentences per day, same for all users. The game features anonymous session tracking, attempt counting, and localStorage persistence.
 
-## Features (Phase 1)
+## Features (Current Version)
 
-- ✓ Random sentence selection from CSV data
-- ✓ Multiple attempts per sentence
-- ✓ Simple correct/incorrect feedback
-- ✓ Grammatical explanations after each attempt
-- ✓ "Show solution" option available at any time
-- ✓ Three difficulty levels (Fàcil, Mitjà, Difícil)
-- ✓ Basic instructions/help modal
-- ✓ Catalan language interface
-- ✓ Responsive design (mobile & desktop)
+- ✅ **Daily Challenge System**: 5 sentences per day, same for all users
+- ✅ **Anonymous Session Tracking**: 12-character session IDs
+- ✅ **Attempt Tracking**: Frontend counts attempts, backend stores when correct
+- ✅ **localStorage Persistence**: Game state saved across page refreshes
+- ✅ **Daily Reset**: New challenge each day
+- ✅ **Backend Answer Validation**: Secure validation via API
+- ✅ **Grammatical Explanations**: Shown after correct answers
+- ✅ **Completion Screen**: Summary of attempts when all 5 sentences done
+- ✅ **Three Difficulty Levels**: Easy, Medium, Hard
+- ✅ **Unlimited Retries**: No attempt limits per sentence
+- ✅ **Catalan Language Interface**: All UI text in Catalan
+- ✅ **Responsive Design**: Works on mobile and desktop
+- ✅ **Configurable API Endpoint**: Via environment variables
 
 ## Tech Stack
 
 - **Frontend Framework:** React 18 with TypeScript
 - **Build Tool:** Vite 6
 - **Styling:** Tailwind CSS 3
-- **Data:** CSV file (30 sample sentences)
-- **Deployment:** Static site (no backend needed)
+- **Data Source:** Backend API (configurable endpoint)
+- **API Integration:** Fetch API with TypeScript
+- **Environment Config:** Vite environment variables
 
 ## Project Structure
 
 ```
 pronoms_febles/
 ├── public/
-│   ├── data/
-│   │   └── sentences.csv          # Game content (30 sentences)
 │   └── vite.svg                    # Favicon
 ├── src/
 │   ├── components/
-│   │   ├── Game.tsx               # Main game logic
+│   │   ├── Game.tsx               # Main game logic with daily challenge
 │   │   ├── Instructions.tsx       # Rules and help modal
 │   │   └── Feedback.tsx           # Result display
 │   ├── utils/
-│   │   └── csvParser.ts           # CSV parsing and game utilities
+│   │   └── apiService.ts          # API communication (GET /api/new/, POST /api/check/)
 │   ├── types/
 │   │   └── index.ts               # TypeScript type definitions
 │   ├── App.tsx                    # Main app component
 │   ├── main.tsx                   # React entry point
 │   ├── index.css                  # Tailwind imports and global styles
 │   └── vite-env.d.ts              # Vite type definitions
+├── .env.example                    # Example environment variables
+├── .env                           # Local environment config (not committed)
 ├── index.html                      # HTML entry point
 ├── package.json                    # Dependencies
 ├── tsconfig.json                   # TypeScript config
@@ -55,7 +60,6 @@ pronoms_febles/
 ├── postcss.config.js               # PostCSS config
 ├── eslint.config.js                # ESLint config
 ├── CLAUDE.md                       # Development guidance
-├── first_phase.md                  # Phase 1 specification
 └── README.md                       # This file
 ```
 
@@ -65,6 +69,7 @@ pronoms_febles/
 
 - Node.js 18+ and npm
 - Modern web browser (Chrome, Firefox, Safari, Edge)
+- Backend API running at `http://localhost:8000` (or configure custom URL)
 
 ### Installation Steps
 
@@ -78,14 +83,46 @@ pronoms_febles/
    npm install
    ```
 
-3. **Start development server:**
+3. **Configure API endpoint (optional):**
+
+   Copy the example environment file:
+   ```bash
+   cp .env.example .env
+   ```
+
+   Edit `.env` to set your API base URL:
+   ```
+   VITE_API_BASE_URL=http://localhost:8000
+   ```
+
+   Default: `http://localhost:8000`
+
+4. **Ensure backend is running:**
+
+   The backend API must be accessible at the configured URL with these endpoints:
+   - `GET /api/new/` - Starts a new game and returns first sentence
+   - `POST /api/check/` - Validates user's answer
+
+   **Expected API Response Format (GET /api/new/):**
+   ```json
+   {
+     "gameSessionId": "a7f3d9c24e8b1234",
+     "sentenceId": 1,
+     "fullSentence": "Dóna la pilota a mi",
+     "difficulty": "easy"
+   }
+   ```
+
+   See [new_api.md](new_api.md) for complete API specification.
+
+5. **Start development server:**
    ```bash
    npm run dev
    ```
 
-4. **Open in browser:**
+6. **Open in browser:**
    - Navigate to `http://localhost:5173`
-   - The game should load immediately
+   - The game will fetch sentences from the API automatically
 
 ### Build for Production
 
@@ -116,27 +153,81 @@ npm run preview
 **Short sentence:** "Dóna-me-la"
 **Explanation:** El pronom 'em' (a mi) es col·loca abans de 'la' i es transforma en 'me' davant de vocal o h muda.
 
-## Data Format
+## API Configuration
 
-The game content is stored in `/public/data/sentences.csv` with the following structure:
+### Environment Variables
 
-```csv
-frase_completa,frase_curta,nivell_dificultat,explicacio
+The application uses Vite environment variables for configuration:
+
+- **`VITE_API_BASE_URL`** - Base URL for the backend API
+  - Default: `http://localhost:8000`
+  - Set in `.env` file
+
+### API Endpoints
+
+The game requires a backend with two endpoints:
+
+#### 1. GET /api/new/
+
+**Description:** Starts a new game and returns the first sentence
+
+**URL Parameters:** None
+
+**Response Format:**
+```json
+{
+  "gameSessionId": "a7f3d9c24e8b1234",
+  "sentenceId": 1,
+  "fullSentence": "Dóna la pilota a mi",
+  "difficulty": "easy"
+}
 ```
 
-### Columns
+#### 2. POST /api/check/
 
-- `frase_completa` - Full sentence with strong pronouns (Catalan)
-- `frase_curta` - Short sentence with weak pronouns (Catalan)
-- `nivell_dificultat` - `facil`, `mitja`, or `dificil`
-- `explicacio` - Grammatical explanation (Catalan)
+**Description:** Validates user's answer and returns result
 
-### Current Content
+**Request Body:**
+```json
+{
+  "gameSessionId": "a7f3d9c24e8b",
+  "sentenceId": 1,
+  "answer": "Dóna-me-la",
+  "attempts": 3
+}
+```
 
-The CSV file contains **30 sentences** with the following distribution:
-- **Easy (Fàcil):** ~15 sentences - Simple pronouns, common verbs
-- **Medium (Mitjà):** ~10 sentences - Pronoun combinations
-- **Hard (Difícil):** ~5 sentences - Complex combinations and special cases
+**Response Format (Correct, Not Last):**
+```json
+{
+  "correct": true,
+  "explanation": "El pronom 'em' es transforma en 'me' davant de vocal.",
+  "nextSentence": {
+    "sentenceId": 2,
+    "fullSentence": "Porta el llibre a ella",
+    "difficulty": "medium"
+  }
+}
+```
+
+**Response Format (Incorrect):**
+```json
+{
+  "correct": false
+}
+```
+
+**Complete API specification:** See [new_api.md](new_api.md) and [API_INTEGRATION.md](API_INTEGRATION.md)
+
+### Error Handling
+
+The frontend handles the following error scenarios:
+- Network connection failures
+- Server errors (4xx, 5xx)
+- Invalid response format
+- Missing or incomplete data
+
+Users will see clear error messages in Catalan if any issues occur.
 
 ## Development Commands
 
@@ -154,22 +245,25 @@ npm run preview
 npm run lint
 ```
 
-## Success Criteria (Phase 1)
+## Success Criteria (Current Version)
 
-The POC is considered successful if:
+The daily challenge version is considered successful if:
 
 - ✅ Application loads correctly at localhost
-- ✅ Sentences are read and parsed from CSV
-- ✅ Random sentence is displayed each time
+- ✅ Connects to backend API successfully
+- ✅ Fetches daily challenge sentences (5 per day)
+- ✅ Displays game session ID
 - ✅ User can type and check their answer
-- ✅ Correct/incorrect feedback is shown
-- ✅ Multiple attempts are allowed
-- ✅ Solution can be viewed at any time
-- ✅ Explanation is shown after each exercise
-- ✅ User can proceed to next sentence
+- ✅ Backend validates answers correctly
+- ✅ Correct feedback shows explanation and next sentence
+- ✅ Incorrect feedback allows retry
+- ✅ Attempt counting works per sentence
+- ✅ Game state persists across page refreshes
+- ✅ Daily reset works (new challenge each day)
+- ✅ Completion screen shows when all 5 sentences done
 - ✅ Instructions are accessible and clear
 - ✅ Responsive design works on mobile and desktop
-- ✅ All content is in Catalan
+- ✅ All UI content is in Catalan
 
 ## Phase 1 - Out of Scope
 
@@ -221,5 +315,11 @@ Inspired by Wordle and created to help learn Catalan weak pronouns.
 
 ---
 
-**Status:** ✅ Phase 1 POC Complete
+**Status:** ✅ Frontend Implementation Complete - Ready for Backend Integration
+**Version:** Daily Challenge System
 **Last Updated:** October 2025
+
+For complete API specification and integration guide, see:
+- [new_api.md](new_api.md) - Backend API specification
+- [API_INTEGRATION.md](API_INTEGRATION.md) - Frontend integration guide
+- [QUICKSTART.md](QUICKSTART.md) - Quick start for developers

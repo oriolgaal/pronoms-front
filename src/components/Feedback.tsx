@@ -4,18 +4,18 @@ interface FeedbackProps {
   isCorrect: boolean;
   explanation: string;
   correctAnswer?: string;
-  showSolution: boolean;
   onNext: () => void;
   onRetry: () => void;
+  hasNextSentence?: boolean;
 }
 
 const Feedback: React.FC<FeedbackProps> = ({
   isCorrect,
   explanation,
   correctAnswer,
-  showSolution,
   onNext,
   onRetry,
+  hasNextSentence,
 }) => {
   if (isCorrect) {
     return (
@@ -37,40 +37,28 @@ const Feedback: React.FC<FeedbackProps> = ({
           <h3 className="text-2xl font-bold text-green-700">Correcte!</h3>
         </div>
 
-        <div className="mb-4">
-          <h4 className="font-semibold text-gray-700 mb-2">Explicació:</h4>
-          <p className="text-gray-600">{explanation}</p>
-        </div>
+        {correctAnswer && (
+          <div className="mb-4">
+            <h4 className="font-semibold text-gray-700 mb-2">La resposta correcta:</h4>
+            <p className="text-2xl font-bold text-green-800 mb-4">{correctAnswer}</p>
+          </div>
+        )}
 
-        <button
-          onClick={onNext}
-          className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
-        >
-          Següent frase
-        </button>
-      </div>
-    );
-  }
+        {explanation && (
+          <div className="mb-4">
+            <h4 className="font-semibold text-gray-700 mb-2">Explicació:</h4>
+            <p className="text-gray-600">{explanation}</p>
+          </div>
+        )}
 
-  if (showSolution) {
-    return (
-      <div className="mt-6 p-6 bg-blue-50 border-2 border-blue-500 rounded-lg">
-        <div className="mb-4">
-          <h3 className="text-xl font-bold text-blue-700 mb-2">Solució:</h3>
-          <p className="text-2xl font-bold text-blue-900 mb-4">{correctAnswer}</p>
-        </div>
-
-        <div className="mb-4">
-          <h4 className="font-semibold text-gray-700 mb-2">Explicació:</h4>
-          <p className="text-gray-600">{explanation}</p>
-        </div>
-
-        <button
-          onClick={onNext}
-          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
-        >
-          Següent frase
-        </button>
+        {hasNextSentence && (
+          <button
+            onClick={onNext}
+            className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+          >
+            Següent frase
+          </button>
+        )}
       </div>
     );
   }
