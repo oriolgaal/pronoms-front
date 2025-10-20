@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { NextSentenceData } from '../types';
-import { fetchNextSentence, checkAnswer } from '../utils/apiService';
+import { fetchNextSentence, checkAnswer, fetchHint } from '../utils/apiService';
 import Feedback from './Feedback';
 
 const Game: React.FC = () => {
@@ -21,6 +21,12 @@ const Game: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [showFeedback, setShowFeedback] = useState<boolean>(false);
+
+  // Hint state
+  const [currentHintNumber, setCurrentHintNumber] = useState<number>(0);
+  const [displayedHints, setDisplayedHints] = useState<string[]>([]);
+  const [totalHints, setTotalHints] = useState<number>(0);
+  const [loadingHint, setLoadingHint] = useState<boolean>(false);
 
   // Load game state from localStorage on mount
   useEffect(() => {
@@ -87,6 +93,19 @@ const Game: React.FC = () => {
       setIsComplete(false);
       setLoading(false);
 
+      // Reset all feedback and game state
+      setUserInput('');
+      setIsCorrect(null);
+      setExplanation('');
+      setCorrectAnswer('');
+      setShowFeedback(false);
+      setNextSentenceData(null);
+
+      // Reset hint state
+      setCurrentHintNumber(0);
+      setDisplayedHints([]);
+      setTotalHints(0);
+
       // Store gameSessionId in localStorage
       localStorage.setItem('gameSessionId', data.gameSessionId);
     } catch (err) {
@@ -147,6 +166,11 @@ const Game: React.FC = () => {
       setExplanation('');
       setShowFeedback(false);
       setNextSentenceData(null);
+
+      // Reset hint state
+      setCurrentHintNumber(0);
+      setDisplayedHints([]);
+      setTotalHints(0);
     }
   };
 
@@ -159,6 +183,33 @@ const Game: React.FC = () => {
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && !showFeedback) {
       handleCheck();
+    }
+  };
+
+  const requestHint = async () => {
+    setLoadingHint(true);
+
+    try {
+      const response = await fetchHint({
+        sentenceId: currentSentenceId,
+        hintNumber: currentHintNumber,
+      });
+
+      // Update state
+      if (response.hintText) {
+        // Add new hint to displayed hints
+        setDisplayedHints(prev => [...prev, response.hintText!]);
+        setCurrentHintNumber(prev => prev + 1);
+        setTotalHints(response.totalHints);
+      } else {
+        // No more hints available
+        setTotalHints(response.totalHints);
+      }
+    } catch (err) {
+      console.error('Error requesting hint:', err);
+      setError(err instanceof Error ? err.message : 'Error al obtenir la pista');
+    } finally {
+      setLoadingHint(false);
     }
   };
 
@@ -277,7 +328,7 @@ const Game: React.FC = () => {
           <>
             <div className="mb-6">
               <label htmlFor="answer" className="block text-gray-700 font-semibold mb-3 text-lg">
-                Escriu la frase curta:
+                Frase amb pronoms:
               </label>
               <input
                 id="answer"
@@ -291,15 +342,46 @@ const Game: React.FC = () => {
               />
             </div>
 
-            {/* Button */}
-            <button
-              onClick={handleCheck}
-              disabled={!userInput.trim()}
-              className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold py-3 px-6 rounded-lg transition-colors"
-            >
-              Comprovar
-            </button>
+            {/* Buttons */}
+            <div className="flex gap-3">
+              <button
+                onClick={handleCheck}
+                disabled={!userInput.trim()}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+              >
+                Comprovar
+              </button>
+              <button
+                onClick={requestHint}
+                disabled={
+                  loadingHint ||
+                  isCorrect === true ||
+                  (totalHints > 0 && currentHintNumber >= totalHints)
+                }
+                className="bg-yellow-500 hover:bg-yellow-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+              >
+                {loadingHint ? 'Carregant...' : 'Pista'}
+                {totalHints > 0 && ` (${currentHintNumber}/${totalHints})`}
+              </button>
+            </div>
           </>
+        )}
+
+        {/* Display Hints */}
+        {displayedHints.length > 0 && (
+          <div className="mt-6 p-4 bg-yellow-50 border-2 border-yellow-200 rounded-lg">
+            <h3 className="font-bold text-lg mb-3 text-yellow-800">Pistes:</h3>
+            {displayedHints.map((hint, index) => (
+              <p key={index} className="mb-2 text-gray-700">
+                <span className="font-semibold text-yellow-700">{index + 1}.</span> {hint}
+              </p>
+            ))}
+            {currentHintNumber >= totalHints && totalHints > 0 && (
+              <p className="text-sm text-gray-600 italic mt-3 pt-3 border-t border-yellow-300">
+                No hi ha més pistes disponibles.
+              </p>
+            )}
+          </div>
         )}
 
         {/* Feedback */}

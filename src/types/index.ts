@@ -38,6 +38,18 @@ export interface CheckAnswerRequest {
   attempts: number;
 }
 
+// Hint API Types
+export interface HintRequest {
+  sentenceId: number;
+  hintNumber: number;
+}
+
+export interface HintResponse {
+  hintText: string | null;
+  hintNumber: number;
+  totalHints: number;
+}
+
 // Game State
 export interface GameState {
   gameSessionId: string;
