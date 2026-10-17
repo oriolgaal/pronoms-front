@@ -21,3 +21,4 @@ Updated 2026-10-17 (agreed by the project owner):
 - The button calls POST /api/reveal/ with the session id and the sentence id. The back returns the correct answer, the explanation, the accepted answers and the next sentence (null after the 5th), marks the sentence as revealed in the session and advances the session.
 - After a reveal the front shows the solution (not as a correct answer) with a button to advance. The final screen tells solved and revealed sentences apart.
 - The hint request also includes the session id, and hints come from the sentences of that session (not from the current date). Hints are only served for the current sentence.
+- Hints come from the sentence's own progressive hints (CSV column pistes, '|'-separated, easiest first). Only sentences without that column fall back to splitting the explanation by '.'. The explanation is shown after a correct answer or a reveal.
