@@ -25,8 +25,12 @@ const Instructions: React.FC<InstructionsProps> = ({ onClose }) => {
             <ol className="list-decimal list-inside space-y-2">
               <li>Llegeix la frase completa que apareix</li>
               <li>Escriu la versió curta utilitzant pronoms febles</li>
-              <li>Clica "Comprovar" per veure si és correcta</li>
-              <li>Si t'encalles, pots clicar "Veure solució"</li>
+              <li>Clica "Comprovar" per veure si és correcta. Pots tornar-ho a provar tantes vegades com vulguis</li>
+              <li>Si necessites ajuda, clica "Pista"</li>
+              <li>
+                Si t'encalles, clica "Veure solució" en qualsevol moment: veuràs la resposta i
+                l'explicació, però la frase comptarà com a revelada, no com a encertada
+              </li>
               <li>Llegeix l'explicació per aprendre la regla gramatical</li>
               <li>Continua amb la següent frase</li>
             </ol>
@@ -57,7 +61,7 @@ const Instructions: React.FC<InstructionsProps> = ({ onClose }) => {
               <li>Posa atenció als guions i apòstrofs</li>
               <li>Els pronoms febles tenen un ordre específic</li>
               <li>Recorda les transformacions: em → me, el → 'l, etc.</li>
-              <li>La resposta ha de ser exacta (inclosos guions i apòstrofs)</li>
+              <li>Els guions i els apòstrofs compten; les majúscules i el punt final, no</li>
             </ul>
           </section>
 
