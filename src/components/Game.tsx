@@ -1,220 +1,196 @@
-import React, { useState, useEffect } from 'react';
-import { NextSentenceData } from '../types';
-import { fetchNextSentence, checkAnswer, fetchHint } from '../utils/apiService';
+import React, { useCallback, useEffect, useReducer, useRef, useState } from 'react';
+import { ApiError, fetchNextSentence, checkAnswer, fetchHint, revealSolution } from '../utils/apiService';
+import {
+  SentenceOutcome,
+  gameReducer,
+  loadSavedGameState,
+  saveGameState,
+  todayKey,
+} from '../state/gameReducer';
 import Feedback from './Feedback';
+import RevealedSolution from './RevealedSolution';
+
+interface Notice {
+  kind: 'info' | 'error';
+  text: string;
+}
+
+const SESSION_EXPIRED_NOTICE: Notice = {
+  kind: 'info',
+  text: 'La sessió havia caducat; hem començat una partida nova.',
+};
+
+/** Builds an inline, recoverable error message in Catalan. */
+function recoverableErrorNotice(err: unknown, action: string): Notice {
+  let detail = 'Torna-ho a provar.';
+  if (err instanceof ApiError) {
+    if (err.status === undefined) {
+      detail = 'Comprova la connexió i torna-ho a provar.';
+    } else if (err.status >= 500) {
+      detail = "El servidor no respon correctament. Torna-ho a provar d'aquí a una estona.";
+    } else if (err.status === 400) {
+      detail = 'La petició no és vàlida. Torna-ho a provar.';
+    }
+  }
+  return { kind: 'error', text: `No s'ha pogut ${action}. ${detail}` };
+}
+
+function attemptsLabel(count: number): string {
+  return `${count} ${count === 1 ? 'intent' : 'intents'}`;
+}
+
+/** Final screen line for one sentence, e.g. "encertada (2 intents)". */
+function outcomeLabel(outcome: SentenceOutcome, attempts: number): string {
+  const result = outcome === 'revealed' ? 'revelada' : 'encertada';
+  return `${result} (${attemptsLabel(attempts)})`;
+}
 
 const Game: React.FC = () => {
-  // Game state based on new API design
-  const [gameSessionId, setGameSessionId] = useState<string>('');
-  const [currentSentenceId, setCurrentSentenceId] = useState<number>(1);
-  const [currentSentence, setCurrentSentence] = useState<string>('');
-  const [totalSentences, setTotalSentences] = useState<number>(5);
-  const [userInput, setUserInput] = useState<string>('');
-  const [attemptCounts, setAttemptCounts] = useState<Record<number, number>>({
-    1: 0, 2: 0, 3: 0, 4: 0, 5: 0
-  });
-  const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
-  const [explanation, setExplanation] = useState<string>('');
-  const [correctAnswer, setCorrectAnswer] = useState<string>('');
-  const [isComplete, setIsComplete] = useState<boolean>(false);
-  const [nextSentenceData, setNextSentenceData] = useState<NextSentenceData | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
-  const [showFeedback, setShowFeedback] = useState<boolean>(false);
+  // Single serializable game state, restored synchronously from localStorage
+  const [game, dispatch] = useReducer(gameReducer, null, loadSavedGameState);
 
-  // Hint state
-  const [currentHintNumber, setCurrentHintNumber] = useState<number>(0);
-  const [displayedHints, setDisplayedHints] = useState<string[]>([]);
-  const [totalHints, setTotalHints] = useState<number>(0);
+  // Transient UI state (not persisted)
+  const [isStarting, setIsStarting] = useState<boolean>(game === null);
+  const [fatalError, setFatalError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
+  const [isChecking, setIsChecking] = useState<boolean>(false);
+  const [isRevealing, setIsRevealing] = useState<boolean>(false);
   const [loadingHint, setLoadingHint] = useState<boolean>(false);
 
-  // Load game state from localStorage on mount
-  useEffect(() => {
-    const loadGameState = async () => {
-      try {
-        const savedState = localStorage.getItem('gameState');
-        const savedDate = localStorage.getItem('gameDate');
-        const today = new Date().toISOString().split('T')[0];
+  // Synchronous in-flight guards: state updates are not visible within the same tick.
+  // Check and reveal share one guard so they can never overlap.
+  const answerRequestRef = useRef(false);
+  const hintingRef = useRef(false);
+  const startingRef = useRef(false);
+  const restoredRef = useRef(game !== null);
 
-        if (savedState && savedDate === today) {
-          // Restore state from localStorage
-          const state = JSON.parse(savedState);
+  const startNewGame = useCallback(async (noticeAfterStart?: Notice) => {
+    if (startingRef.current) return;
+    startingRef.current = true;
+    setIsStarting(true);
+    setFatalError(null);
+    setNotice(null);
 
-          // Only restore if we have valid data
-          if (state.gameSessionId && state.currentSentence) {
-            setGameSessionId(state.gameSessionId);
-            setCurrentSentenceId(state.currentSentenceId);
-            setCurrentSentence(state.currentSentence);
-            setAttemptCounts(state.attemptCounts);
-            setLoading(false);
-          } else {
-            // Saved state is incomplete, start fresh
-            await startNewGame();
-            localStorage.setItem('gameDate', today);
-          }
-        } else {
-          // New day or no saved state, start fresh
-          await startNewGame();
-          localStorage.setItem('gameDate', today);
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Error desconegut');
-        setLoading(false);
-      }
-    };
-
-    loadGameState();
+    try {
+      const data = await fetchNextSentence();
+      dispatch({ type: 'GAME_STARTED', data, date: todayKey() });
+      setNotice(noticeAfterStart ?? null);
+    } catch (err) {
+      // Without a session there is no game to keep: show the full error screen
+      setFatalError(err instanceof Error ? err.message : 'Error desconegut');
+    } finally {
+      startingRef.current = false;
+      setIsStarting(false);
+    }
   }, []);
 
-  // Save game state to localStorage whenever it changes
+  // Start a new game on mount unless today's game was restored
   useEffect(() => {
-    if (gameSessionId) {
-      const gameState = {
-        gameSessionId,
-        currentSentenceId,
-        currentSentence,
-        attemptCounts,
-      };
-      localStorage.setItem('gameState', JSON.stringify(gameState));
+    if (!restoredRef.current) {
+      startNewGame();
     }
-  }, [gameSessionId, currentSentenceId, currentSentence, attemptCounts]);
+  }, [startNewGame]);
 
-  const startNewGame = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const data = await fetchNextSentence();
-      setGameSessionId(data.gameSessionId);
-      setCurrentSentenceId(data.sentenceId);
-      setCurrentSentence(data.fullSentence);
-      setTotalSentences(data.totalSentences);
-      setAttemptCounts({ 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 });
-      setIsComplete(false);
-      setLoading(false);
-
-      // Reset all feedback and game state
-      setUserInput('');
-      setIsCorrect(null);
-      setExplanation('');
-      setCorrectAnswer('');
-      setShowFeedback(false);
-      setNextSentenceData(null);
-
-      // Reset hint state
-      setCurrentHintNumber(0);
-      setDisplayedHints([]);
-      setTotalHints(0);
-
-      // Store gameSessionId in localStorage
-      localStorage.setItem('gameSessionId', data.gameSessionId);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error desconegut');
-      setLoading(false);
+  /** 404 means the session is gone: start over with a notice. Anything else stays inline. */
+  const handleRequestError = (err: unknown, action: string) => {
+    if (err instanceof ApiError && err.status === 404) {
+      startNewGame(SESSION_EXPIRED_NOTICE);
+    } else {
+      setNotice(recoverableErrorNotice(err, action));
     }
   };
 
-  const handleCheck = async () => {
-    if (!userInput.trim() || !gameSessionId) return;
+  // Persist the whole game state on every change
+  useEffect(() => {
+    if (game) {
+      saveGameState(game);
+    }
+  }, [game]);
 
-    // Increment attempt count for current sentence
-    const currentAttempts = attemptCounts[currentSentenceId] + 1;
-    const newAttemptCounts = {
-      ...attemptCounts,
-      [currentSentenceId]: currentAttempts,
-    };
-    setAttemptCounts(newAttemptCounts);
+  const handleCheck = async () => {
+    if (!game || game.phase !== 'answering' || answerRequestRef.current) return;
+    const answer = game.userInput.trim();
+    if (!answer) return;
+
+    const { gameSessionId, sentenceId } = game;
+    // The attempt is only recorded once the server has answered
+    const attempts = game.attempts[sentenceId - 1] + 1;
+
+    answerRequestRef.current = true;
+    setIsChecking(true);
+    setNotice(null);
 
     try {
-      // Send to backend
-      const response = await checkAnswer({
-        gameSessionId,
-        sentenceId: currentSentenceId,
-        answer: userInput.trim(),
-        attempts: currentAttempts,
-      });
-
-      if (response.correct) {
-        setIsCorrect(true);
-        setCorrectAnswer(response.correctAnswer || '');
-        setExplanation(response.explanation || '');
-        setShowFeedback(true);
-
-        if (response.nextSentence) {
-          setNextSentenceData(response.nextSentence);
-        } else {
-          // nextSentence is null, game is complete
-          setIsComplete(true);
-        }
-      } else {
-        setIsCorrect(false);
-        setShowFeedback(true);
-      }
+      const response = await checkAnswer({ gameSessionId, sentenceId, answer, attempts });
+      dispatch({ type: 'CHECK_SUCCEEDED', sentenceId, attempts, response });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al comprovar la resposta');
+      handleRequestError(err, 'comprovar la resposta');
+    } finally {
+      answerRequestRef.current = false;
+      setIsChecking(false);
+    }
+  };
+
+  const handleReveal = async () => {
+    if (!game || game.phase !== 'answering' || answerRequestRef.current) return;
+    const { gameSessionId, sentenceId } = game;
+
+    answerRequestRef.current = true;
+    setIsRevealing(true);
+    setNotice(null);
+
+    try {
+      const response = await revealSolution({ gameSessionId, sentenceId });
+      dispatch({ type: 'REVEAL_SUCCEEDED', sentenceId, response });
+    } catch (err) {
+      handleRequestError(err, 'mostrar la solució');
+    } finally {
+      answerRequestRef.current = false;
+      setIsRevealing(false);
     }
   };
 
   const handleNext = () => {
-    if (nextSentenceData) {
-      // Use data from previous check response
-      setCurrentSentenceId(nextSentenceData.sentenceId);
-      setCurrentSentence(nextSentenceData.fullSentence);
-      setUserInput('');
-      setIsCorrect(null);
-      setCorrectAnswer('');
-      setExplanation('');
-      setShowFeedback(false);
-      setNextSentenceData(null);
+    setNotice(null);
+    dispatch({ type: 'NEXT_SENTENCE' });
+  };
 
-      // Reset hint state
-      setCurrentHintNumber(0);
-      setDisplayedHints([]);
-      setTotalHints(0);
-    }
+  const handleShowSummary = () => {
+    setNotice(null);
+    dispatch({ type: 'SHOW_SUMMARY' });
   };
 
   const handleRetry = () => {
-    setShowFeedback(false);
-    setIsCorrect(null);
-    setUserInput('');
+    dispatch({ type: 'RETRY' });
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && !showFeedback) {
+    if (e.key === 'Enter' && !game?.feedback) {
       handleCheck();
     }
   };
 
   const requestHint = async () => {
+    if (!game || hintingRef.current) return;
+    const { gameSessionId, sentenceId } = game;
+    const hintNumber = game.hints.nextNumber;
+
+    hintingRef.current = true;
     setLoadingHint(true);
+    setNotice(null);
 
     try {
-      const response = await fetchHint({
-        sentenceId: currentSentenceId,
-        hintNumber: currentHintNumber,
-      });
-
-      // Update state
-      if (response.hintText) {
-        // Add new hint to displayed hints
-        setDisplayedHints(prev => [...prev, response.hintText!]);
-        setCurrentHintNumber(prev => prev + 1);
-        setTotalHints(response.totalHints);
-      } else {
-        // No more hints available
-        setTotalHints(response.totalHints);
-      }
+      const response = await fetchHint({ gameSessionId, sentenceId, hintNumber });
+      dispatch({ type: 'HINT_RECEIVED', sentenceId, response });
     } catch (err) {
-      console.error('Error requesting hint:', err);
-      setError(err instanceof Error ? err.message : 'Error al obtenir la pista');
+      handleRequestError(err, 'obtenir la pista');
     } finally {
+      hintingRef.current = false;
       setLoadingHint(false);
     }
   };
 
-
-  if (loading) {
+  if (isStarting || (!game && !fatalError)) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
@@ -225,7 +201,7 @@ const Game: React.FC = () => {
     );
   }
 
-  if (error) {
+  if (fatalError || !game) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center p-8 bg-red-50 border-2 border-red-200 rounded-lg max-w-md">
@@ -243,9 +219,9 @@ const Game: React.FC = () => {
             />
           </svg>
           <h2 className="text-2xl font-bold text-red-700 mb-2">Error</h2>
-          <p className="text-gray-600">{error}</p>
+          <p className="text-gray-600">{fatalError}</p>
           <button
-            onClick={startNewGame}
+            onClick={() => startNewGame()}
             className="mt-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-lg transition-colors"
           >
             Tornar a intentar
@@ -255,7 +231,10 @@ const Game: React.FC = () => {
     );
   }
 
-  if (isComplete) {
+  const { sentenceId, totalSentences, attempts, outcomes, hints, feedback } = game;
+  const isAnswerRequestPending = isChecking || isRevealing;
+
+  if (game.phase === 'complete') {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center p-8 bg-green-50 border-2 border-green-200 rounded-lg max-w-md">
@@ -275,10 +254,15 @@ const Game: React.FC = () => {
           <h2 className="text-3xl font-bold text-green-700 mb-2">Enhorabona!</h2>
           <p className="text-xl text-gray-600 mb-4">Has completat les frases d'avui!</p>
           <div className="text-gray-600 mb-6">
-            <p className="font-semibold mb-2">Total d'intents per frase:</p>
+            <p className="font-semibold mb-2">Resultat per frase:</p>
             <ul className="mt-2 space-y-1">
-              {Object.entries(attemptCounts).map(([id, count]) => (
-                <li key={id}>Frase {id}: {count} {count === 1 ? 'intent' : 'intents'}</li>
+              {attempts.map((count, index) => (
+                <li key={index}>
+                  Frase {index + 1}:{' '}
+                  <span className={outcomes[index] === 'revealed' ? 'text-amber-700' : 'text-green-700'}>
+                    {outcomeLabel(outcomes[index], count)}
+                  </span>
+                </li>
               ))}
             </ul>
           </div>
@@ -287,10 +271,7 @@ const Game: React.FC = () => {
             <p className="text-gray-700 font-semibold">Vols tornar a intentar-ho?</p>
           </div>
           <button
-            onClick={() => {
-              setIsComplete(false);
-              startNewGame();
-            }}
+            onClick={() => startNewGame()}
             className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
           >
             Tornar a començar
@@ -307,24 +288,38 @@ const Game: React.FC = () => {
         <div className="mb-6">
           <div className="flex gap-4 text-gray-600">
             <div>
-              <span className="font-semibold">Frase:</span> {currentSentenceId} de {totalSentences}
+              <span className="font-semibold">Frase:</span> {sentenceId} de {totalSentences}
             </div>
             <div>
-              <span className="font-semibold">Intents:</span> {attemptCounts[currentSentenceId]}
+              <span className="font-semibold">Intents:</span> {attempts[sentenceId - 1]}
             </div>
           </div>
         </div>
+
+        {/* Inline notices (recoverable errors, session restarted) */}
+        {notice && (
+          <div
+            role={notice.kind === 'error' ? 'alert' : 'status'}
+            className={`mb-6 p-4 rounded-lg border-2 ${
+              notice.kind === 'error'
+                ? 'bg-red-50 border-red-200 text-red-700'
+                : 'bg-blue-50 border-blue-200 text-blue-700'
+            }`}
+          >
+            {notice.text}
+          </div>
+        )}
 
         {/* Full Sentence Display */}
         <div className="mb-8">
           <h3 className="text-gray-700 font-semibold mb-3 text-lg">Frase original:</h3>
           <div className="bg-gray-50 p-6 rounded-lg border-2 border-gray-200">
-            <p className="text-2xl text-gray-800">{currentSentence}</p>
+            <p className="text-2xl text-gray-800">{game.fullSentence}</p>
           </div>
         </div>
 
         {/* Input Area */}
-        {!showFeedback && (
+        {game.phase === 'answering' && !feedback && (
           <>
             <div className="mb-6">
               <label htmlFor="answer" className="block text-gray-700 font-semibold mb-3 text-lg">
@@ -333,9 +328,14 @@ const Game: React.FC = () => {
               <input
                 id="answer"
                 type="text"
-                value={userInput}
-                onChange={(e) => setUserInput(e.target.value)}
+                value={game.userInput}
+                onChange={(e) => dispatch({ type: 'INPUT_CHANGED', value: e.target.value })}
                 onKeyDown={handleKeyDown}
+                readOnly={isAnswerRequestPending}
+                aria-busy={isAnswerRequestPending}
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck={false}
                 className="w-full px-4 py-3 text-lg border-2 border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 transition-colors"
                 placeholder="Escriu la teva resposta aquí..."
                 autoFocus
@@ -343,40 +343,43 @@ const Game: React.FC = () => {
             </div>
 
             {/* Buttons */}
-            <div className="flex gap-3">
+            <div className="flex flex-wrap gap-3">
               <button
                 onClick={handleCheck}
-                disabled={!userInput.trim()}
+                disabled={isAnswerRequestPending || !game.userInput.trim()}
                 className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold py-3 px-6 rounded-lg transition-colors"
               >
-                Comprovar
+                {isChecking ? 'Comprovant…' : 'Comprovar'}
               </button>
               <button
                 onClick={requestHint}
-                disabled={
-                  loadingHint ||
-                  isCorrect === true ||
-                  (totalHints > 0 && currentHintNumber >= totalHints)
-                }
+                disabled={loadingHint || (hints.total > 0 && hints.nextNumber >= hints.total)}
                 className="bg-yellow-500 hover:bg-yellow-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold py-3 px-6 rounded-lg transition-colors"
               >
                 {loadingHint ? 'Carregant...' : 'Pista'}
-                {totalHints > 0 && ` (${currentHintNumber}/${totalHints})`}
+                {hints.total > 0 && ` (${hints.nextNumber}/${hints.total})`}
+              </button>
+              <button
+                onClick={handleReveal}
+                disabled={isAnswerRequestPending}
+                className="bg-amber-600 hover:bg-amber-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+              >
+                {isRevealing ? 'Carregant...' : 'Veure solució'}
               </button>
             </div>
           </>
         )}
 
         {/* Display Hints */}
-        {displayedHints.length > 0 && (
+        {hints.shown.length > 0 && (
           <div className="mt-6 p-4 bg-yellow-50 border-2 border-yellow-200 rounded-lg">
             <h3 className="font-bold text-lg mb-3 text-yellow-800">Pistes:</h3>
-            {displayedHints.map((hint, index) => (
+            {hints.shown.map((hint, index) => (
               <p key={index} className="mb-2 text-gray-700">
                 <span className="font-semibold text-yellow-700">{index + 1}.</span> {hint}
               </p>
             ))}
-            {currentHintNumber >= totalHints && totalHints > 0 && (
+            {hints.nextNumber >= hints.total && hints.total > 0 && (
               <p className="text-sm text-gray-600 italic mt-3 pt-3 border-t border-yellow-300">
                 No hi ha més pistes disponibles.
               </p>
@@ -384,16 +387,19 @@ const Game: React.FC = () => {
           </div>
         )}
 
-        {/* Feedback */}
-        {showFeedback && (
+        {/* Feedback (kept in state so it survives a reload) */}
+        {feedback && (
           <Feedback
-            isCorrect={isCorrect === true}
-            explanation={explanation}
-            correctAnswer={correctAnswer}
+            response={feedback}
             onNext={handleNext}
             onRetry={handleRetry}
-            hasNextSentence={!!nextSentenceData}
+            hasNextSentence={!!game.nextSentence}
           />
+        )}
+
+        {/* Revealed solution ("Veure solució"), also persisted */}
+        {game.phase === 'revealed' && game.reveal && (
+          <RevealedSolution reveal={game.reveal} onNext={handleNext} onFinish={handleShowSummary} />
         )}
       </div>
     </div>

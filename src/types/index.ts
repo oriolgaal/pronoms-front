@@ -26,9 +26,11 @@ export interface NextSentenceData {
 
 export interface CheckAnswerResponse {
   correct: boolean;
-  correctAnswer?: string;      // Only when correct
-  explanation?: string;        // Only when correct
-  nextSentence?: NextSentenceData | null; // Only when correct (null = game complete)
+  correctAnswer?: string | null;      // Only when correct
+  explanation?: string | null;        // Only when correct
+  acceptedAnswers?: string[] | null;  // Only when correct; canonical answer first
+  nearMiss: boolean;                  // Wrong answer only off in apostrophes, hyphens or spaces
+  nextSentence: NextSentenceData | null; // null on a wrong answer or after the last sentence
 }
 
 export interface CheckAnswerRequest {
@@ -38,8 +40,22 @@ export interface CheckAnswerRequest {
   attempts: number;
 }
 
+// Reveal API Types ("Veure solució")
+export interface RevealRequest {
+  gameSessionId: string;
+  sentenceId: number;
+}
+
+export interface RevealResponse {
+  correctAnswer: string;
+  explanation: string;
+  acceptedAnswers: string[];             // Canonical answer first
+  nextSentence: NextSentenceData | null; // null after the last sentence
+}
+
 // Hint API Types
 export interface HintRequest {
+  gameSessionId: string;
   sentenceId: number;
   hintNumber: number;
 }
@@ -48,19 +64,4 @@ export interface HintResponse {
   hintText: string | null;
   hintNumber: number;
   totalHints: number;
-}
-
-// Game State
-export interface GameState {
-  gameSessionId: string;
-  currentSentenceId: number;
-  currentSentence: string;
-  difficulty: DifficultyLevel;
-  userInput: string;
-  attemptCounts: Record<number, number>; // { 1: 3, 2: 1, 3: 0, 4: 0, 5: 0 }
-  isCorrect: boolean | null;
-  correctAnswer: string;
-  explanation: string;
-  isComplete: boolean;
-  nextSentenceData: NextSentenceData | null;
 }

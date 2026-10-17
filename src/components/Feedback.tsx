@@ -1,23 +1,21 @@
 import React from 'react';
+import { CheckAnswerResponse } from '../types';
+import AlternativeAnswers from './AlternativeAnswers';
 
 interface FeedbackProps {
-  isCorrect: boolean;
-  explanation: string;
-  correctAnswer?: string;
+  response: CheckAnswerResponse;
   onNext: () => void;
   onRetry: () => void;
   hasNextSentence?: boolean;
 }
 
-const Feedback: React.FC<FeedbackProps> = ({
-  isCorrect,
-  explanation,
-  correctAnswer,
-  onNext,
-  onRetry,
-  hasNextSentence,
-}) => {
-  if (isCorrect) {
+/**
+ * Result of a check. A correct answer shows the solution, the explanation and
+ * the other accepted forms; a wrong one never includes the solution.
+ */
+const Feedback: React.FC<FeedbackProps> = ({ response, onNext, onRetry, hasNextSentence }) => {
+  if (response.correct) {
+    const { correctAnswer, explanation, acceptedAnswers } = response;
     return (
       <div className="mt-6 p-6 bg-green-50 border-2 border-green-500 rounded-lg">
         <div className="flex items-center mb-4">
@@ -43,6 +41,8 @@ const Feedback: React.FC<FeedbackProps> = ({
             <p className="text-2xl font-bold text-green-800 mb-4">{correctAnswer}</p>
           </div>
         )}
+
+        <AlternativeAnswers correctAnswer={correctAnswer} acceptedAnswers={acceptedAnswers} />
 
         {explanation && (
           <div className="mb-4">
@@ -82,7 +82,11 @@ const Feedback: React.FC<FeedbackProps> = ({
         <h3 className="text-2xl font-bold text-red-700">Incorrecte</h3>
       </div>
 
-      <p className="text-gray-600 mb-4">Torna-ho a provar!</p>
+      {response.nearMiss ? (
+        <p className="text-gray-700 font-semibold mb-4">Gairebé! Revisa els guions i els apòstrofs.</p>
+      ) : (
+        <p className="text-gray-600 mb-4">Torna-ho a provar!</p>
+      )}
 
       <button
         onClick={onRetry}
