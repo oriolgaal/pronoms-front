@@ -24,7 +24,7 @@ const Instructions: React.FC<InstructionsProps> = ({ onClose }) => {
             <h3 className="text-xl font-semibold mb-3 text-gray-800">Instruccions</h3>
             <ol className="list-decimal list-inside space-y-2">
               <li>Llegeix la frase completa que apareix</li>
-              <li>Escriu la versió curta utilitzant pronoms febles</li>
+              <li>Escriu la versió curta substituint tots els complements per pronoms febles</li>
               <li>Clica "Comprovar" per veure si és correcta. Pots tornar-ho a provar tantes vegades com vulguis</li>
               <li>Si necessites ajuda, clica "Pista"</li>
               <li>
@@ -41,15 +41,15 @@ const Instructions: React.FC<InstructionsProps> = ({ onClose }) => {
             <div className="bg-gray-50 p-4 rounded-lg space-y-3">
               <div>
                 <p className="font-semibold text-gray-700">Frase completa:</p>
-                <p className="text-gray-600">"Dóna la pilota a mi"</p>
+                <p className="text-gray-600">"Dona la pilota a mi"</p>
               </div>
               <div>
                 <p className="font-semibold text-gray-700">Frase curta:</p>
-                <p className="text-gray-600 text-lg">"Dóna-me-la"</p>
+                <p className="text-gray-600 text-lg">"Dona-me-la"</p>
               </div>
               <div>
                 <p className="text-sm text-gray-500 italic">
-                  Els pronoms febles substitueixen els complements i s'ajunten al verb amb guions.
+                  Els pronoms febles substitueixen els complements i s'ajunten al verb amb guionets.
                 </p>
               </div>
             </div>
@@ -58,7 +58,7 @@ const Instructions: React.FC<InstructionsProps> = ({ onClose }) => {
           <section>
             <h3 className="text-xl font-semibold mb-3 text-gray-800">Consells</h3>
             <ul className="list-disc list-inside space-y-2">
-              <li>Posa atenció als guions i apòstrofs</li>
+              <li>Substitueix tots els complements, no només un</li>
               <li>Els pronoms febles tenen un ordre específic</li>
               <li>Recorda les transformacions: em → me, el → 'l, etc.</li>
               <li>Els guions i els apòstrofs compten; les majúscules i el punt final, no</li>
